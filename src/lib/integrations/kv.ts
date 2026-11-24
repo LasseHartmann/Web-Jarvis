@@ -5,23 +5,29 @@
  * integrations can fall back to env vars or localStorage.
  */
 
+function getKvCredentials(): { url: string; token: string } | null {
+  const url =
+    process.env.UPSTASH_REDIS_REST_URL?.trim() ||
+    process.env.KV_REST_API_URL?.trim();
+  const token =
+    process.env.UPSTASH_REDIS_REST_TOKEN?.trim() ||
+    process.env.KV_REST_API_TOKEN?.trim();
+  return url && token ? { url, token } : null;
+}
+
 export function isKvConfigured(): boolean {
-  return Boolean(
-    process.env.UPSTASH_REDIS_REST_URL?.trim() &&
-      process.env.UPSTASH_REDIS_REST_TOKEN?.trim()
-  );
+  return Boolean(getKvCredentials());
 }
 
 async function kvCommand<T = unknown>(command: Array<string | number>): Promise<T | null> {
-  const url = process.env.UPSTASH_REDIS_REST_URL?.trim();
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN?.trim();
-  if (!url || !token) return null;
+  const creds = getKvCredentials();
+  if (!creds) return null;
 
   try {
-    const res = await fetch(url, {
+    const res = await fetch(creds.url, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${creds.token}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify(command),
