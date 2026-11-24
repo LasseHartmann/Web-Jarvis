@@ -1,5 +1,5 @@
-import { JarvisWorkspace } from "@/components/JarvisWorkspace";
+import { JarvisCore } from "@/components/JarvisCore";
 
 export default function HomePage() {
-  return <JarvisWorkspace />;
+  return <JarvisCore />;
 }

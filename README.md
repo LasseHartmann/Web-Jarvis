@@ -1,68 +1,34 @@
-# J.A.R.V.I.S. Web App
+# J.A.R.V.I.S. — Pure Voice & Sensor AI Core
 
-A holographic **J.A.R.V.I.S.** AI command interface built with **Next.js (App Router, TypeScript)**, **Tailwind CSS**, and the official **`@google/genai`** SDK, ready to push to **GitHub** and deploy on **Vercel**.
+A zero-UI, voice-only animated **J.A.R.V.I.S.** assistant powered by the **Google Gemini Live API** (`@google/genai`), hosted via GitHub and Vercel.
 
-## Features
+## How It Works
 
-- **Reactive Arc-Reactor Core**: 60fps HTML5 Canvas visualizer driven by live Web Audio API microphone frequencies (`AnalyserNode`) and system states (`STANDBY`, `LISTENING`, `THINKING`, `SPEAKING`, `TOOL_ACTIVE`).
-- **Streaming Gemini Command Console**: Real-time streamed Markdown replies, code blocks, multimodal image vision (upload, drag-and-drop, or paste), and **Google Search Grounding** with clickable source citations.
-- **Voice Interaction**: Click-to-speak microphone dictation + spoken J.A.R.V.I.S. replies (Web Speech API) and subtle Web Audio HUD chimes.
-- **Autonomous HUD Tools (Gemini Function Calling)**:
-  - `start_timer` / `cancel_timer` — live countdown chronometers with completion alerts
-  - `add_task` / `complete_task` — prioritized Mission Queue
-  - `save_note` — persistent Memory Bank notes
-  - `set_hud_theme` — live switching between **Arc Cyan**, **Amber Alert**, and **Stealth Emerald**
-  - `clear_console` — start a fresh session
-- **Production-Ready API Key Security**:
-  - `GEMINI_API_KEY` stays strictly on the server inside Next.js Route Handlers (`/api/chat`, `/api/models`, `/api/live-token`).
-  - Optional **Security Clearance Gate** (`JARVIS_ACCESS_PASSCODE` + HMAC-signed `HttpOnly` cookie + per-IP rate limiting) protects your API quota on public Vercel URLs.
-  - Optional **Session BYOK** field in Settings (stored only in browser `sessionStorage`) for quick local testing.
-- **Phase 2 Foundation Included**: `/api/live-token` (short-lived ephemeral tokens via `ai.authTokens.create`) and `public/audio-worklet-processor.js` (16 kHz PCM capture) ready for real-time duplex Gemini Live voice.
+1. Open the page — you see only the breathing 3D animated holographic J.A.R.V.I.S. core (no buttons, menus, or chat panels).
+2. **Tap or click anywhere** (or press `Space`) to awaken J.A.R.V.I.S. and grant whichever browser permissions you allow.
+3. Speak naturally — full-duplex speech-to-speech with instant barge-in interruption. Tap again or say *"Jarvis, power down"* to return to standby.
 
-## Local Setup
+## Browser Sensors & Capabilities (When Permitted)
 
-1. Copy `.env.example` to `.env.local`:
-   ```powershell
-   Copy-Item .env.example .env.local
-   ```
-2. Add your Google AI Studio Gemini API key to `.env.local`:
-   ```env
-   GEMINI_API_KEY=your_real_gemini_api_key
-   ```
-   *(Optional: set `JARVIS_ACCESS_PASSCODE` and `AUTH_SECRET` to test the Security Clearance Gate locally.)*
-3. Start the development server:
-   ```powershell
-   npm install
-   npm run dev
-   ```
-4. Open `http://localhost:3000`.
+- **All Microphones**: 16 kHz PCM live audio streaming via `AudioWorklet`, full device enumeration, voice-triggered microphone switching (`switch_microphone`), and live ambient audio spectrum visualization.
+- **All Cameras + Live Vision**: Continuous ~1 fps camera vision feed into Gemini Live, voice-triggered camera switching (`switch_camera`: front / back / next / off), sequential multi-camera sweep (`inspect_all_cameras`), and mobile flashlight control (`set_camera_torch`).
+- **Screen Sharing**: Say *"look at my screen"* to stream your display (`share_screen`).
+- **GPS / Geolocation**: Live latitude, longitude, accuracy, altitude, speed, and heading (`watchPosition`).
+- **Gyroscope & Accelerometer**: Live 3D orientation (`alpha`/`beta`/`gamma`), compass heading, linear acceleration, rotation rate (including iOS `requestPermission()`), plus live 3D parallax tilt on the animated core.
+- **Device & Environment Telemetry**: Battery level & charging state, network type/speed/latency, ambient light sensor (lux), local time & timezone, screen resolution & orientation, CPU cores, device memory, storage quota, clipboard reading (`read_clipboard`), haptic vibration, Google Search grounding, and voice-controlled core color palettes (`cyan`, `amber`, `emerald`, `crimson`, `violet`).
 
-## Pushing to GitHub
+## Security on Vercel
 
-1. Create a new empty repository on [github.com/new](https://github.com/new) (e.g., `jarvis`).
-2. Connect and push from `D:\Source\jarvis`:
-   ```powershell
-   git remote add origin https://github.com/<your-username>/jarvis.git
-   git branch -M main
-   git push -u origin main
-   ```
-   *(Double-check `git status` — `.env.local` is ignored by `.gitignore` and must never be committed.)*
+- `GEMINI_API_KEY` stays strictly on the server inside `/api/live-token`, which mints single-use, constrained ephemeral tokens (`ai.authTokens.create`) so your browser connects directly to Gemini Live WebSockets without exposing your key or hitting Vercel serverless timeouts.
+- Optionally set `JARVIS_ACCESS_PASSCODE` and `AUTH_SECRET` in Vercel Environment Variables to protect your deployed URL.
 
-## Deploying to Vercel
+## Local Run
 
-### Option A — GitHub Auto-Deploy (Recommended)
-1. Go to [vercel.com/new](https://vercel.com/new) and import your `jarvis` GitHub repository.
-2. Under **Environment Variables**, add:
-   - `GEMINI_API_KEY` *(required)*
-   - `JARVIS_ACCESS_PASSCODE` *(strongly recommended so strangers cannot spend your API quota)*
-   - `AUTH_SECRET` *(generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`) *
-3. Click **Deploy**. Every push to `main` automatically redeploys over HTTPS (required for browser microphone permissions).
-
-### Option B — Vercel CLI
 ```powershell
-vercel
-vercel env add GEMINI_API_KEY
-vercel env add JARVIS_ACCESS_PASSCODE
-vercel env add AUTH_SECRET
-vercel --prod
+Copy-Item .env.example .env.local
+# Edit .env.local and set GEMINI_API_KEY=...
+npm install
+npm run dev
 ```
+
+Open `http://localhost:3000` (or deploy to Vercel for HTTPS — required for camera, microphone, GPS, and gyroscope permissions on mobile devices).

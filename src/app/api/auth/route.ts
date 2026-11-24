@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { connection, NextRequest, NextResponse } from "next/server";
 import {
   CLEARANCE_COOKIE_NAME,
   checkRateLimit,
@@ -12,6 +12,7 @@ import {
 } from "@/lib/auth";
 
 export async function GET(request: NextRequest) {
+  await connection();
   return NextResponse.json({
     passcodeRequired: isPasscodeRequired(),
     authenticated: isRequestAuthorized(request),

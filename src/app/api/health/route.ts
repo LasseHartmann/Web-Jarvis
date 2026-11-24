@@ -1,21 +1,14 @@
-import { NextRequest, NextResponse } from "next/server";
+import { connection, NextRequest, NextResponse } from "next/server";
 import { isPasscodeRequired, isRequestAuthorized } from "@/lib/auth";
-import {
-  DEFAULT_CHAT_MODEL,
-  DEFAULT_LIVE_MODEL,
-  resolveApiKey,
-} from "@/lib/gemini";
-import type { SystemHealth } from "@/types/jarvis";
+import { DEFAULT_LIVE_VOICE, getServerApiKey } from "@/lib/gemini";
 
 export async function GET(request: NextRequest) {
-  const { source } = resolveApiKey(request.headers.get("x-gemini-api-key"));
-  const health: SystemHealth = {
+  await connection();
+  return NextResponse.json({
     ok: true,
-    apiKeyConfigured: source !== "none",
+    apiKeyConfigured: Boolean(getServerApiKey()),
     passcodeRequired: isPasscodeRequired(),
     authenticated: isRequestAuthorized(request),
-    defaultChatModel: DEFAULT_CHAT_MODEL,
-    defaultLiveModel: DEFAULT_LIVE_MODEL,
-  };
-  return NextResponse.json(health);
+    voiceName: DEFAULT_LIVE_VOICE,
+  });
 }

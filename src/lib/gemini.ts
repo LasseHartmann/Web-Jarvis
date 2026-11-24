@@ -1,52 +1,29 @@
 import { GoogleGenAI } from "@google/genai";
-import type { PersonaTone, TelemetrySnapshot } from "@/types/jarvis";
 
-export const DEFAULT_CHAT_MODEL =
-  process.env.GEMINI_CHAT_MODEL?.trim() || "gemini-2.5-flash";
+export const DEFAULT_LIVE_VOICE =
+  process.env.GEMINI_LIVE_VOICE?.trim() || "Charon";
 
-export const DEFAULT_LIVE_MODEL =
-  process.env.GEMINI_LIVE_MODEL?.trim() ||
-  "gemini-2.5-flash-native-audio-preview-12-2025";
-
-export const CURATED_MODELS = [
-  {
-    id: "gemini-2.5-flash",
-    label: "Gemini 2.5 Flash (Balanced Default)",
-    tier: "flash",
-  },
-  {
-    id: "gemini-3.5-flash-lite",
-    label: "Gemini 3.5 Flash-Lite (Ultra Fast)",
-    tier: "lite",
-  },
-  {
-    id: "gemini-3.8-flash",
-    label: "Gemini 3.8 Flash (High Capacity)",
-    tier: "flash",
-  },
-  {
-    id: "gemini-3.1-pro-preview",
-    label: "Gemini 3.1 Pro Preview (Deep Reasoning)",
-    tier: "pro",
-  },
+const PREFERRED_LIVE_MODELS = [
+  "gemini-2.5-flash-native-audio-preview-12-2025",
+  "gemini-3.1-flash-live-preview",
+  "gemini-2.5-flash-native-audio",
+  "gemini-3.8-live",
+  "gemini-2.0-flash-live-001",
 ];
 
-export function resolveApiKey(headerKey?: string | null): {
-  apiKey: string | null;
-  source: "server" | "byok" | "none";
-} {
-  const custom = headerKey?.trim();
-  if (custom) {
-    return { apiKey: custom, source: "byok" };
-  }
-  const serverKey = process.env.GEMINI_API_KEY?.trim();
-  if (serverKey && serverKey !== "your_gemini_api_key_here") {
-    return { apiKey: serverKey, source: "server" };
-  }
-  return { apiKey: null, source: "none" };
+let cachedModel: { id: string; fetchedAt: number } | null = null;
+const MODEL_CACHE_TTL_MS = 10 * 60 * 1000;
+
+export function getServerApiKey(): string | null {
+  const key = process.env.GEMINI_API_KEY?.trim();
+  if (!key || key === "your_gemini_api_key_here") return null;
+  return key;
 }
 
-export function createGeminiClient(apiKey: string, apiVersion?: string): GoogleGenAI {
+export function createGeminiClient(
+  apiKey: string,
+  apiVersion?: "v1alpha" | "v1beta"
+): GoogleGenAI {
   if (apiVersion) {
     return new GoogleGenAI({
       apiKey,
@@ -56,64 +33,56 @@ export function createGeminiClient(apiKey: string, apiVersion?: string): GoogleG
   return new GoogleGenAI({ apiKey });
 }
 
-export function buildJarvisSystemInstruction(
-  tone: PersonaTone,
-  telemetry?: TelemetrySnapshot
-): string {
-  const toneDirectives: Record<PersonaTone, string> = {
-    classic:
-      "Adopt the composed, articulate, dryly witty demeanor of J.A.R.V.I.S. — poised, respectful, lightly British in phrasing, and quietly proactive without ever being verbose or melodramatic.",
-    concise:
-      "Respond in crisp, tactical J.A.R.V.I.S. telemetry style: ultra-concise, high-signal answers with zero filler, ready for rapid spoken delivery.",
-    technical:
-      "Act as a principal systems engineer wearing the J.A.R.V.I.S. persona: precise, architectural, deeply analytical, with structured code blocks and concrete trade-offs.",
-  };
+export async function resolveLiveModel(apiKey: string): Promise<string> {
+  const explicit = process.env.GEMINI_LIVE_MODEL?.trim();
+  if (explicit) return explicit;
 
-  const telemetryLines: string[] = [];
-  if (telemetry) {
-    telemetryLines.push(`- Local time: ${telemetry.localTime} (${telemetry.timeZone})`);
-    telemetryLines.push(`- Active HUD theme: ${telemetry.theme}`);
-    if (telemetry.activeTimers.length > 0) {
-      const timersText = telemetry.activeTimers
-        .map((t) => `"${t.label}" (${t.remainingSeconds}s left)`)
-        .join(", ");
-      telemetryLines.push(`- Active timers: ${timersText}`);
-    } else {
-      telemetryLines.push("- Active timers: none");
-    }
-
-    const openTasks = telemetry.tasks.filter((t) => !t.completed);
-    if (openTasks.length > 0) {
-      const tasksText = openTasks
-        .slice(0, 10)
-        .map((t) => `[${t.priority}] ${t.title}`)
-        .join("; ");
-      telemetryLines.push(`- Open tasks (${openTasks.length}): ${tasksText}`);
-    } else {
-      telemetryLines.push("- Open tasks: none");
-    }
-
-    if (telemetry.notes.length > 0) {
-      const notesText = telemetry.notes
-        .slice(0, 6)
-        .map((n) => `"${n.title}"`)
-        .join(", ");
-      telemetryLines.push(`- Saved notes (${telemetry.notes.length}): ${notesText}`);
-    }
+  if (cachedModel && Date.now() - cachedModel.fetchedAt < MODEL_CACHE_TTL_MS) {
+    return cachedModel.id;
   }
 
-  return [
-    "You are J.A.R.V.I.S. (Just A Rather Very Intelligent System), the user's personal holographic AI command interface.",
-    toneDirectives[tone] || toneDirectives.classic,
-    "",
-    "Operational guidelines:",
-    "- Be genuinely helpful, direct, and accurate. Use clean Markdown (headings, bullet lists, fenced code blocks) when it aids readability, while keeping conversational answers crisp so they sound natural when read aloud.",
-    "- You have interactive HUD tools (`start_timer`, `cancel_timer`, `add_task`, `complete_task`, `save_note`, `set_hud_theme`, `clear_console`). Invoke them whenever the user asks to set timers, manage tasks/notes, change the HUD theme, or clear the console.",
-    "- Never fabricate real-time sensor readings (CPU temperature, home lights, etc.) as if you had hardware access; be transparent about what is live telemetry vs. simulated.",
-    telemetryLines.length > 0
-      ? `\nLive HUD Telemetry Snapshot:\n${telemetryLines.join("\n")}`
-      : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
+  try {
+    const ai = createGeminiClient(apiKey);
+    const pager = await ai.models.list({ config: { pageSize: 100 } });
+    const liveCandidates: string[] = [];
+
+    for await (const model of pager) {
+      const id = (model.name || "").replace(/^models\//, "");
+      if (!id) continue;
+      const actions = model.supportedActions || [];
+      const supportsBidi = actions.some((a) =>
+        a.toLowerCase().includes("bidigeneratecontent")
+      );
+      if (
+        supportsBidi ||
+        /native-audio|flash-live|-live/i.test(id)
+      ) {
+        liveCandidates.push(id);
+      }
+    }
+
+    for (const preferred of PREFERRED_LIVE_MODELS) {
+      if (liveCandidates.includes(preferred)) {
+        cachedModel = { id: preferred, fetchedAt: Date.now() };
+        return preferred;
+      }
+    }
+
+    const nativeAudio = liveCandidates.find((id) =>
+      /native-audio|live/i.test(id)
+    );
+    if (nativeAudio) {
+      cachedModel = { id: nativeAudio, fetchedAt: Date.now() };
+      return nativeAudio;
+    }
+
+    if (liveCandidates[0]) {
+      cachedModel = { id: liveCandidates[0], fetchedAt: Date.now() };
+      return liveCandidates[0];
+    }
+  } catch {
+    // Fall back to default known Live native-audio model
+  }
+
+  return PREFERRED_LIVE_MODELS[0];
 }

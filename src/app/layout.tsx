@@ -1,28 +1,19 @@
 import type { Metadata, Viewport } from "next";
-import { Space_Grotesk, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
-const spaceGrotesk = Space_Grotesk({
-  variable: "--font-space-grotesk",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-});
-
-const jetbrainsMono = JetBrains_Mono({
-  variable: "--font-jetbrains-mono",
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
-});
-
 export const metadata: Metadata = {
-  title: "J.A.R.V.I.S. // Holographic AI Command Interface",
+  title: "J.A.R.V.I.S.",
   description:
-    "Just A Rather Very Intelligent System — Multimodal voice and HUD assistant powered by the Google Gemini API.",
+    "Pure voice-only animated J.A.R.V.I.S. AI assistant with real-time Gemini Live audio, vision, and browser sensor telemetry.",
 };
 
 export const viewport: Viewport = {
-  themeColor: "#040812",
+  themeColor: "#02050b",
   colorScheme: "dark",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
 };
 
 export default function RootLayout({
@@ -31,11 +22,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="en"
-      className={`${spaceGrotesk.variable} ${jetbrainsMono.variable} dark h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col bg-[#040812] text-[#e6f4ff] selection:bg-cyan-400/30 selection:text-cyan-100">
+    <html lang="en" className="dark h-full overflow-hidden">
+      <body className="h-full w-full overflow-hidden bg-[#02050b] antialiased">
         {children}
       </body>
     </html>

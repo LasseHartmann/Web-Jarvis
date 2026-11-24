@@ -1,125 +1,123 @@
-export type HudTheme = "arc-cyan" | "amber-alert" | "stealth-emerald";
+export type CorePalette = "cyan" | "amber" | "emerald" | "crimson" | "violet";
 
-export type JarvisStatus =
-  | "standby"
+export type JarvisCoreState =
+  | "idle"
+  | "connecting"
   | "listening"
-  | "thinking"
   | "speaking"
-  | "tool_active"
+  | "thinking"
   | "error";
 
-export type PersonaTone = "classic" | "concise" | "technical";
-
-export interface ImageAttachment {
-  id: string;
-  name: string;
-  mimeType: string;
-  dataBase64: string;
+export interface MediaDeviceSummary {
+  index: number;
+  deviceId: string;
+  label: string;
+  facing?: "front" | "back" | "unknown";
+  active: boolean;
 }
 
-export interface GroundingSource {
-  title: string;
-  uri: string;
-}
-
-export interface ToolActionEvent {
-  id: string;
-  name: string;
-  args: Record<string, unknown>;
-  status: "executed" | "failed";
-  summary: string;
-  timestamp: number;
-}
-
-export interface ChatMessage {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  timestamp: number;
-  attachments?: ImageAttachment[];
-  sources?: GroundingSource[];
-  toolActions?: ToolActionEvent[];
-  model?: string;
-  isStreaming?: boolean;
+export interface GpsTelemetry {
+  permission: "granted" | "denied" | "prompt" | "unsupported";
+  latitude: number | null;
+  longitude: number | null;
+  accuracyMeters: number | null;
+  altitudeMeters: number | null;
+  altitudeAccuracyMeters: number | null;
+  headingDegrees: number | null;
+  speedMetersPerSec: number | null;
+  speedKmh: number | null;
+  updatedAt: string | null;
   error?: string;
 }
 
-export interface ChatThread {
-  id: string;
-  title: string;
-  createdAt: number;
-  updatedAt: number;
-  messages: ChatMessage[];
+export interface GyroscopeTelemetry {
+  supported: boolean;
+  permission: "granted" | "denied" | "prompt" | "unsupported";
+  alphaDeg: number | null; // compass yaw 0-360
+  betaDeg: number | null; // pitch -180 to 180
+  gammaDeg: number | null; // roll -90 to 90
+  absolute: boolean | null;
+  compassHeadingDeg: number | null;
+  updatedAt: string | null;
 }
 
-export interface JarvisTimer {
-  id: string;
-  label: string;
-  durationSeconds: number;
-  endsAt: number;
-  createdAt: number;
-  completed?: boolean;
+export interface AccelerometerTelemetry {
+  supported: boolean;
+  ax: number | null;
+  ay: number | null;
+  az: number | null;
+  gx: number | null;
+  gy: number | null;
+  gz: number | null;
+  rotAlpha: number | null;
+  rotBeta: number | null;
+  rotGamma: number | null;
+  updatedAt: string | null;
 }
 
-export interface JarvisTask {
-  id: string;
-  title: string;
-  priority: "low" | "normal" | "high";
-  completed: boolean;
-  createdAt: number;
+export interface BatteryTelemetry {
+  supported: boolean;
+  levelPercent: number | null;
+  charging: boolean | null;
+  chargingTimeSec: number | null;
+  dischargingTimeSec: number | null;
 }
 
-export interface JarvisNote {
-  id: string;
-  title: string;
-  body: string;
-  createdAt: number;
-  updatedAt: number;
+export interface NetworkTelemetry {
+  online: boolean;
+  effectiveType: string | null;
+  type: string | null;
+  downlinkMbps: number | null;
+  rttMs: number | null;
+  saveData: boolean | null;
 }
 
-export interface TelemetrySnapshot {
+export interface DeviceTelemetry {
   localTime: string;
+  isoTime: string;
   timeZone: string;
-  theme: HudTheme;
-  activeTimers: Array<{ id: string; label: string; remainingSeconds: number }>;
-  tasks: Array<{ id: string; title: string; priority: string; completed: boolean }>;
-  notes: Array<{ id: string; title: string; bodyPreview: string }>;
+  language: string;
+  languages: string[];
+  platform: string;
+  userAgent: string;
+  cpuCores: number | null;
+  deviceMemoryGB: number | null;
+  maxTouchPoints: number;
+  screenWidth: number;
+  screenHeight: number;
+  viewportWidth: number;
+  viewportHeight: number;
+  devicePixelRatio: number;
+  screenOrientation: string | null;
+  screenAngleDeg: number | null;
+  prefersDarkMode: boolean;
+  pageVisible: boolean;
+  storageUsageMB: number | null;
+  storageQuotaMB: number | null;
+  ambientLightLux: number | null;
+  ambientMicLevel: number;
 }
 
-export interface JarvisSettings {
-  theme: HudTheme;
-  tone: PersonaTone;
+export interface FullSensorTelemetry {
+  cameras: MediaDeviceSummary[];
+  cameraActive: boolean;
+  screenShareActive: boolean;
+  torchOn: boolean;
+  microphones: MediaDeviceSummary[];
+  microphoneActive: boolean;
+  gps: GpsTelemetry;
+  gyroscope: GyroscopeTelemetry;
+  accelerometer: AccelerometerTelemetry;
+  battery: BatteryTelemetry;
+  network: NetworkTelemetry;
+  device: DeviceTelemetry;
+}
+
+export interface LiveTokenResponse {
+  token: string;
   model: string;
-  voiceEnabled: boolean;
+  apiVersion: "v1alpha" | "v1beta";
   voiceName: string;
-  speechRate: number;
-  searchGrounding: boolean;
-  soundEffects: boolean;
-  customApiKey: string;
-}
-
-export interface PendingToolResult {
-  name: string;
-  args: Record<string, unknown>;
-  result: Record<string, unknown>;
-}
-
-export type StreamEvent =
-  | { type: "meta"; model: string }
-  | { type: "text"; delta: string }
-  | {
-      type: "tool_call";
-      call: { id?: string; name: string; args: Record<string, unknown> };
-    }
-  | { type: "sources"; sources: GroundingSource[] }
-  | { type: "error"; message: string }
-  | { type: "done" };
-
-export interface SystemHealth {
-  ok: boolean;
-  apiKeyConfigured: boolean;
-  passcodeRequired: boolean;
-  authenticated: boolean;
-  defaultChatModel: string;
-  defaultLiveModel: string;
+  includeSearch: boolean;
+  expiresAt: string;
 }
