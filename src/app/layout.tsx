@@ -4,7 +4,12 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "J.A.R.V.I.S.",
   description:
-    "Pure voice-only animated J.A.R.V.I.S. AI assistant with real-time Gemini Live audio, vision, and browser sensor telemetry.",
+    "Pure voice-only animated J.A.R.V.I.S. AI assistant with real-time Gemini Live audio, vision, sensors, Spotify, Google Workspace, WhatsApp, GitHub, and Vercel.",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "J.A.R.V.I.S.",
+  },
 };
 
 export const viewport: Viewport = {
@@ -14,6 +19,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

@@ -125,5 +125,7 @@ export interface LiveTokenResponse {
   apiVersion: "v1alpha" | "v1beta";
   voiceName: string;
   includeSearch: boolean;
+  compressionEnabled: boolean;
+  resumptionEnabled: boolean;
   expiresAt: string;
 }

@@ -15,8 +15,7 @@ import type { LiveTokenResponse } from "@/types/jarvis";
 
 /**
  * Mints a single-use, time-bounded ephemeral token for direct browser-to-Gemini
- * Live API WebSocket audio/video streaming. Keeps GEMINI_API_KEY strictly on
- * the server and avoids Vercel serverless function duration limits.
+ * Live API WebSocket audio/video streaming with session resumption & context compression.
  */
 export async function POST(request: NextRequest) {
   if (!isRequestAuthorized(request)) {
@@ -27,7 +26,7 @@ export async function POST(request: NextRequest) {
   }
 
   const ip = getClientIp(request);
-  const rate = checkRateLimit(`live-token:${ip}`, 20, 60 * 1000);
+  const rate = checkRateLimit(`live-token:${ip}`, 25, 60 * 1000);
   if (!rate.allowed) {
     return NextResponse.json(
       { error: `Rate limit exceeded. Retry in ${rate.retryAfterSeconds}s.` },
@@ -49,11 +48,25 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  let resumptionHandle: string | undefined;
+  try {
+    const body = (await request.json()) as { resumptionHandle?: string };
+    if (typeof body?.resumptionHandle === "string" && body.resumptionHandle.trim()) {
+      resumptionHandle = body.resumptionHandle.trim();
+    }
+  } catch {
+    // Empty body is valid
+  }
+
   const model = await resolveLiveModel(apiKey);
   const expireTime = new Date(Date.now() + 30 * 60 * 1000).toISOString();
   const newSessionExpireTime = new Date(Date.now() + 2 * 60 * 1000).toISOString();
 
-  const buildLiveConfig = (includeSearch: boolean): LiveConnectConfig => ({
+  const buildLiveConfig = (opts: {
+    includeSearch: boolean;
+    includeResumption: boolean;
+    includeCompression: boolean;
+  }): LiveConnectConfig => ({
     responseModalities: [Modality.AUDIO],
     speechConfig: {
       voiceConfig: {
@@ -65,22 +78,60 @@ export async function POST(request: NextRequest) {
     systemInstruction: {
       parts: [{ text: JARVIS_LIVE_SYSTEM_INSTRUCTION }],
     },
-    tools: includeSearch
+    tools: opts.includeSearch
       ? [
           { googleSearch: {} },
           { functionDeclarations: JARVIS_LIVE_FUNCTION_DECLARATIONS },
         ]
       : [{ functionDeclarations: JARVIS_LIVE_FUNCTION_DECLARATIONS }],
+    ...(opts.includeCompression
+      ? { contextWindowCompression: { slidingWindow: {} } }
+      : {}),
+    ...(opts.includeResumption
+      ? {
+          sessionResumption: resumptionHandle
+            ? { handle: resumptionHandle }
+            : {},
+        }
+      : {}),
   });
 
   const attempts: Array<{
     apiVersion: "v1alpha" | "v1beta";
     includeSearch: boolean;
+    includeResumption: boolean;
+    includeCompression: boolean;
   }> = [
-    { apiVersion: "v1alpha", includeSearch: true },
-    { apiVersion: "v1alpha", includeSearch: false },
-    { apiVersion: "v1beta", includeSearch: true },
-    { apiVersion: "v1beta", includeSearch: false },
+    {
+      apiVersion: "v1alpha",
+      includeSearch: true,
+      includeResumption: true,
+      includeCompression: true,
+    },
+    {
+      apiVersion: "v1alpha",
+      includeSearch: false,
+      includeResumption: true,
+      includeCompression: true,
+    },
+    {
+      apiVersion: "v1alpha",
+      includeSearch: false,
+      includeResumption: false,
+      includeCompression: false,
+    },
+    {
+      apiVersion: "v1beta",
+      includeSearch: true,
+      includeResumption: true,
+      includeCompression: true,
+    },
+    {
+      apiVersion: "v1beta",
+      includeSearch: false,
+      includeResumption: false,
+      includeCompression: false,
+    },
   ];
 
   let lastError = "Unable to mint Gemini Live API ephemeral token.";
@@ -95,7 +146,7 @@ export async function POST(request: NextRequest) {
           newSessionExpireTime,
           liveConnectConstraints: {
             model,
-            config: buildLiveConfig(attempt.includeSearch),
+            config: buildLiveConfig(attempt),
           },
         },
       });
@@ -107,6 +158,8 @@ export async function POST(request: NextRequest) {
           apiVersion: attempt.apiVersion,
           voiceName: DEFAULT_LIVE_VOICE,
           includeSearch: attempt.includeSearch,
+          compressionEnabled: attempt.includeCompression,
+          resumptionEnabled: attempt.includeResumption,
           expiresAt: expireTime,
         };
         return NextResponse.json(payload);
