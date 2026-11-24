@@ -40,9 +40,6 @@ const SERVER_TOOLS = new Set([
   "google_calendar",
   "google_gmail",
   "google_tasks",
-  "whatsapp_message",
-  "github_action",
-  "vercel_action",
 ]);
 
 interface WakeLockSentinelLike {

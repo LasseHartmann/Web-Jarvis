@@ -291,74 +291,6 @@ export const JARVIS_LIVE_FUNCTION_DECLARATIONS: FunctionDeclaration[] = [
       required: ["action"],
     },
   },
-  {
-    name: "whatsapp_message",
-    description:
-      "Send a WhatsApp text message, list configured contacts, or read recent incoming WhatsApp messages. NEVER pass confirmed=true for send_text until you read the recipient & message aloud and the user verbally confirms.",
-    parameters: {
-      type: Type.OBJECT,
-      properties: {
-        action: {
-          type: Type.STRING,
-          description: "'send_text', 'list_contacts', or 'read_recent'.",
-        },
-        recipient: {
-          type: Type.STRING,
-          description: "Contact name, 'me', or international phone number.",
-        },
-        message: { type: Type.STRING, description: "Message text (for send_text)." },
-        confirmed: {
-          type: Type.BOOLEAN,
-          description: "Set true ONLY after explicit verbal user confirmation for send_text.",
-        },
-      },
-      required: ["action"],
-    },
-  },
-  {
-    name: "github_action",
-    description:
-      "Inspect GitHub repositories, open issues, pull requests, recent commits, Actions workflow runs, or create an issue (requires confirmed=true after verbal confirmation).",
-    parameters: {
-      type: Type.OBJECT,
-      properties: {
-        action: {
-          type: Type.STRING,
-          description:
-            "'list_repos', 'list_issues', 'list_prs', 'recent_commits', 'workflow_runs', or 'create_issue'.",
-        },
-        owner: { type: Type.STRING, description: "Optional GitHub owner/org." },
-        repo: { type: Type.STRING, description: "Optional repository name (defaults to Web-Jarvis)." },
-        title: { type: Type.STRING, description: "Issue title (for create_issue)." },
-        body: { type: Type.STRING, description: "Issue description (for create_issue)." },
-        confirmed: {
-          type: Type.BOOLEAN,
-          description: "Set true ONLY after explicit verbal confirmation for create_issue.",
-        },
-      },
-      required: ["action"],
-    },
-  },
-  {
-    name: "vercel_action",
-    description:
-      "List Vercel projects, check latest deployment status, list recent deployments, or trigger a production redeploy (requires confirmed=true after verbal confirmation).",
-    parameters: {
-      type: Type.OBJECT,
-      properties: {
-        action: {
-          type: Type.STRING,
-          description: "'list_projects', 'list_deployments', 'deployment_status', or 'redeploy_latest'.",
-        },
-        project: { type: Type.STRING, description: "Optional Vercel project name." },
-        confirmed: {
-          type: Type.BOOLEAN,
-          description: "Set true ONLY after explicit verbal confirmation for redeploy_latest.",
-        },
-      },
-      required: ["action"],
-    },
-  },
 ];
 
 export const JARVIS_LIVE_SYSTEM_INSTRUCTION = [
@@ -368,8 +300,8 @@ export const JARVIS_LIVE_SYSTEM_INSTRUCTION = [
   "",
   "SENSORY, WORLD & CLOUD POWERS:",
   "- You have live voice, live camera/screen vision, and tools for all browser sensors (`get_sensor_telemetry`, cameras, torch, mics, screen share, clipboard, core colors, HUD voice filter, wake sensitivity, timers).",
-  "- You can check live weather & air quality (`get_weather`), exact street location & nearby places (`get_location_context`), persist long-term memories (`memory_store`), escalate tough coding/math/research questions (`deep_think` — announce briefly 'One moment, sir, running deeper analysis.' before calling), control Spotify (`spotify_control`), manage Google Calendar/Gmail/Tasks (`google_calendar`, `google_gmail`, `google_tasks`), send/read WhatsApp (`whatsapp_message`), and inspect/manage GitHub (`github_action`) and Vercel (`vercel_action`).",
-  "- SAFETY CONFIRMATION RULE (STRICT): For outbound or destructive actions — sending an email, deleting a calendar event, sending a WhatsApp message, creating a GitHub issue, or triggering a Vercel redeploy — ALWAYS call first without `confirmed: true` (or verbally state the exact recipient/target and details) and wait for the user's explicit spoken confirmation ('Yes', 'Proceed', 'Send it') before calling with `confirmed: true`.",
+  "- You can check live weather & air quality (`get_weather`), exact street location & nearby places (`get_location_context`), persist long-term memories (`memory_store`), escalate tough coding/math/research questions (`deep_think` — announce briefly 'One moment, sir, running deeper analysis.' before calling), control Spotify (`spotify_control`), and manage Google Calendar, Gmail, and Google Tasks (`google_calendar`, `google_gmail`, `google_tasks`).",
+  "- SAFETY CONFIRMATION RULE (STRICT): For outbound or destructive actions — sending an email or deleting a calendar event — ALWAYS call first without `confirmed: true` (or verbally state the exact recipient/target and details) and wait for the user's explicit spoken confirmation ('Yes', 'Proceed', 'Send it') before calling with `confirmed: true`.",
   "- If an integration returns that it isn't configured yet, calmly inform the user which service still needs credentials/authorization without reading long technical stack traces.",
   "- Keep spoken replies crisp and natural (1–3 sentences unless asked for depth).",
 ].join("\n");

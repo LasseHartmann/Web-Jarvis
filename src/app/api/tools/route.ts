@@ -1,6 +1,5 @@
 import { connection, NextRequest, NextResponse } from "next/server";
 import { checkRateLimit, getClientIp, isRequestAuthorized } from "@/lib/auth";
-import { handleGitHubAction } from "@/lib/integrations/github";
 import {
   getGoogleClientCreds,
   handleGoogleCalendar,
@@ -11,8 +10,6 @@ import { isKvConfigured, kvGetString } from "@/lib/integrations/kv";
 import { getCloudMemoryBrief, handleServerMemory } from "@/lib/integrations/memory";
 import { getSpotifyClientCreds, handleSpotifyControl } from "@/lib/integrations/spotify";
 import { runDeepThink } from "@/lib/integrations/think";
-import { handleVercelAction } from "@/lib/integrations/vercel";
-import { handleWhatsApp } from "@/lib/integrations/whatsapp";
 import { getLocationContext, getWeatherReport } from "@/lib/integrations/world";
 
 export async function GET(request: NextRequest) {
@@ -42,12 +39,6 @@ export async function GET(request: NextRequest) {
         getGoogleClientCreds() &&
           (googleKvToken || process.env.GOOGLE_REFRESH_TOKEN?.trim())
       ),
-      whatsapp: Boolean(
-        process.env.WHATSAPP_ACCESS_TOKEN?.trim() &&
-          process.env.WHATSAPP_PHONE_NUMBER_ID?.trim()
-      ),
-      github: Boolean(process.env.GITHUB_TOKEN?.trim()),
-      vercel: Boolean(process.env.VERCEL_TOKEN?.trim()),
     },
     memories,
   });
@@ -111,11 +102,11 @@ export async function POST(request: NextRequest) {
 
       case "memory_store":
         result = await handleServerMemory({
-          action: (String(args.action || "list").toLowerCase() as
+          action: String(args.action || "list").toLowerCase() as
             | "remember"
             | "recall"
             | "forget"
-            | "list"),
+            | "list",
           key: typeof args.key === "string" ? args.key : undefined,
           fact: typeof args.fact === "string" ? args.fact : undefined,
           category: typeof args.category === "string" ? args.category : undefined,
@@ -170,35 +161,6 @@ export async function POST(request: NextRequest) {
           notes: typeof args.notes === "string" ? args.notes : undefined,
           due_iso: typeof args.due_iso === "string" ? args.due_iso : undefined,
           task_id: typeof args.task_id === "string" ? args.task_id : undefined,
-        });
-        break;
-
-      case "whatsapp_message":
-        result = await handleWhatsApp({
-          action: String(args.action || "read_recent"),
-          recipient:
-            typeof args.recipient === "string" ? args.recipient : undefined,
-          message: typeof args.message === "string" ? args.message : undefined,
-          confirmed: args.confirmed === true,
-        });
-        break;
-
-      case "github_action":
-        result = await handleGitHubAction({
-          action: String(args.action || "list_repos"),
-          owner: typeof args.owner === "string" ? args.owner : undefined,
-          repo: typeof args.repo === "string" ? args.repo : undefined,
-          title: typeof args.title === "string" ? args.title : undefined,
-          body: typeof args.body === "string" ? args.body : undefined,
-          confirmed: args.confirmed === true,
-        });
-        break;
-
-      case "vercel_action":
-        result = await handleVercelAction({
-          action: String(args.action || "deployment_status"),
-          project: typeof args.project === "string" ? args.project : undefined,
-          confirmed: args.confirmed === true,
         });
         break;
 
