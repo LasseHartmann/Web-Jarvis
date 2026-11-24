@@ -111,14 +111,14 @@ export function JarvisCore() {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.code === "Space" && !needsPasscode) {
         e.preventDefault();
-        void controller.toggle();
+        void controller.handleCoreInteraction();
       }
     };
     window.addEventListener("keydown", onKeyDown);
 
     return () => {
       window.removeEventListener("keydown", onKeyDown);
-      controller.deactivate();
+      controller.dispose(true);
     };
   }, [getController, needsPasscode]);
 
@@ -156,17 +156,18 @@ export function JarvisCore() {
     let rafId = 0;
     const startTime = performance.now();
 
-    // Smooth interpolated visual values
     let curPrimary: RGB = { ...PALETTES.cyan.primary };
     let curSecondary: RGB = { ...PALETTES.cyan.secondary };
     let curGlow: RGB = { ...PALETTES.cyan.glow };
-    let smoothedEnergy = 0.08;
+    let smoothedEnergy = 0.05;
+    let smoothedLuminance = 0.42;
     let smoothedTiltX = 0;
     let smoothedTiltY = 0;
     let rotY = 0;
     let rotX = 0;
     let ringAngleA = 0;
     let ringAngleB = 0;
+    let radarAngle = 0;
 
     const render = (now: number) => {
       const t = (now - startTime) / 1000;
@@ -196,33 +197,47 @@ export function JarvisCore() {
       const sStr = `${Math.round(curSecondary.r)}, ${Math.round(curSecondary.g)}, ${Math.round(curSecondary.b)}`;
       const gStr = `${Math.round(curGlow.r)}, ${Math.round(curGlow.g)}, ${Math.round(curGlow.b)}`;
 
-      // Live audio energy + frequency bins
       const inLevel = controller?.audio.getInputLevel() ?? 0;
       const outLevel = controller?.audio.getOutputLevel() ?? 0;
       const spectrum =
         state === "speaking"
           ? controller?.audio.getOutputSpectrum()
-          : state === "listening"
+          : state === "listening" || state === "standby"
             ? controller?.audio.getInputSpectrum()
             : null;
 
-      let targetEnergy = 0.08 + Math.sin(t * 1.6) * 0.035;
-      if (state === "connecting") {
-        targetEnergy = 0.42 + Math.sin(t * 6.2) * 0.18;
+      let targetEnergy = 0.05 + Math.sin(t * 1.2) * 0.025;
+      let targetLum = 0.42; // Dormant dim glow before first tap
+
+      if (state === "arming") {
+        targetEnergy = 0.34 + Math.sin(t * 5.2) * 0.14;
+        targetLum = 0.72;
+      } else if (state === "standby") {
+        // Serene armed wake-word watch with soft ambient mic shimmer
+        targetEnergy = 0.11 + Math.sin(t * 1.7) * 0.03 + inLevel * 0.22;
+        targetLum = 0.68;
+      } else if (state === "connecting") {
+        targetEnergy = 0.52 + Math.sin(t * 7.5) * 0.18;
+        targetLum = 0.95;
       } else if (state === "listening") {
-        targetEnergy = Math.max(0.18, Math.min(1, 0.16 + inLevel * 1.15));
+        targetEnergy = Math.max(0.2, Math.min(1, 0.18 + inLevel * 1.15));
+        targetLum = 1.0;
       } else if (state === "speaking") {
         targetEnergy = Math.max(
-          0.26,
-          Math.min(1, 0.24 + outLevel * 1.35 + Math.sin(t * 8) * 0.04)
+          0.28,
+          Math.min(1, 0.25 + outLevel * 1.38 + Math.sin(t * 8) * 0.04)
         );
+        targetLum = 1.08;
       } else if (state === "thinking") {
-        targetEnergy = 0.56 + Math.sin(t * 9.5) * 0.16;
+        targetEnergy = 0.58 + Math.sin(t * 9.5) * 0.16;
+        targetLum = 1.0;
       } else if (state === "error") {
-        targetEnergy = 0.45 + Math.abs(Math.sin(t * 7)) * 0.25;
+        targetEnergy = 0.46 + Math.abs(Math.sin(t * 7)) * 0.25;
+        targetLum = 0.9;
       }
 
       smoothedEnergy = lerp(smoothedEnergy, targetEnergy, 0.14);
+      smoothedLuminance = lerp(smoothedLuminance, targetLum, 0.07);
 
       // Gyroscope + pointer parallax tilt
       const gyroTilt = controller?.sensors.getParallaxTilt() ?? { x: 0, y: 0 };
@@ -237,22 +252,28 @@ export function JarvisCore() {
         state === "thinking"
           ? 0.026
           : state === "connecting"
-            ? 0.022
-            : state === "speaking"
-              ? 0.013 + smoothedEnergy * 0.012
-              : state === "listening"
-                ? 0.008 + smoothedEnergy * 0.008
-                : 0.004;
+            ? 0.024
+            : state === "arming"
+              ? 0.016
+              : state === "speaking"
+                ? 0.013 + smoothedEnergy * 0.012
+                : state === "listening"
+                  ? 0.008 + smoothedEnergy * 0.008
+                  : state === "standby"
+                    ? 0.0055
+                    : 0.0028;
 
       rotY += spinRate;
       rotX = Math.sin(t * 0.35) * 0.22 + smoothedTiltY * 0.45;
       ringAngleA += spinRate * 0.7;
       ringAngleB -= spinRate * 1.1;
+      radarAngle += 0.018;
 
       const minDim = Math.min(width, height);
       const baseR = minDim * 0.22;
       const cx = width * 0.5 + smoothedTiltX * minDim * 0.025;
       const cy = height * 0.5 + smoothedTiltY * minDim * 0.025;
+      const lum = smoothedLuminance;
 
       // Clear full obsidian viewport
       ctx.fillStyle = "#02050b";
@@ -267,15 +288,21 @@ export function JarvisCore() {
         cy,
         minDim * 0.52
       );
-      ambient.addColorStop(0, `rgba(${pStr}, ${0.18 + smoothedEnergy * 0.22})`);
-      ambient.addColorStop(0.42, `rgba(${sStr}, ${0.06 + smoothedEnergy * 0.08})`);
+      ambient.addColorStop(
+        0,
+        `rgba(${pStr}, ${(0.16 + smoothedEnergy * 0.22) * lum})`
+      );
+      ambient.addColorStop(
+        0.42,
+        `rgba(${sStr}, ${(0.055 + smoothedEnergy * 0.08) * lum})`
+      );
       ambient.addColorStop(1, "rgba(2, 5, 11, 0)");
       ctx.fillStyle = ambient;
       ctx.beginPath();
       ctx.arc(cx, cy, minDim * 0.52, 0, Math.PI * 2);
       ctx.fill();
 
-      // Subtle vision frame transmission ripple
+      // Subtle vision frame transmission ripple (active live camera)
       if (visionRippleRef.current > 0.01) {
         const progress = 1 - visionRippleRef.current;
         const rippleR = baseR * (1.15 + progress * 0.95);
@@ -287,18 +314,31 @@ export function JarvisCore() {
         visionRippleRef.current *= 0.93;
       }
 
-      // Outer faint geometric orbital ring
+      // Outer geometric orbital ring + delicate sweeping radar arc when armed in standby
       const outerR = baseR * (1.56 + smoothedEnergy * 0.06);
       ctx.save();
       ctx.translate(cx, cy);
       ctx.rotate(ringAngleA);
-      ctx.strokeStyle = `rgba(${pStr}, ${0.16 + smoothedEnergy * 0.16})`;
+      ctx.strokeStyle = `rgba(${pStr}, ${(0.15 + smoothedEnergy * 0.16) * lum})`;
       ctx.lineWidth = 1.1;
       ctx.setLineDash([18, 12, 4, 12]);
       ctx.beginPath();
       ctx.arc(0, 0, outerR, 0, Math.PI * 2);
       ctx.stroke();
       ctx.restore();
+
+      if (state === "standby" || state === "arming") {
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(radarAngle);
+        ctx.lineCap = "round";
+        ctx.strokeStyle = `rgba(${gStr}, ${state === "arming" ? 0.55 : 0.34})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(0, 0, outerR * 1.04, 0, Math.PI * 0.28);
+        ctx.stroke();
+        ctx.restore();
+      }
 
       // Counter-rotating Arc-Reactor triple energy arcs
       const midR = baseR * (1.28 + smoothedEnergy * 0.09);
@@ -309,8 +349,8 @@ export function JarvisCore() {
       for (let i = 0; i < 3; i++) {
         const a0 = (i * Math.PI * 2) / 3 + 0.14;
         const a1 = a0 + Math.PI * 0.44;
-        ctx.strokeStyle = `rgba(${pStr}, ${0.38 + smoothedEnergy * 0.45})`;
-        ctx.lineWidth = 2.4 + smoothedEnergy * 1.4;
+        ctx.strokeStyle = `rgba(${pStr}, ${(0.34 + smoothedEnergy * 0.45) * lum})`;
+        ctx.lineWidth = 2.2 + smoothedEnergy * 1.4;
         ctx.beginPath();
         ctx.arc(0, 0, midR, a0, a1);
         ctx.stroke();
@@ -320,6 +360,7 @@ export function JarvisCore() {
       // 72-bar circular reactive audio frequency halo
       const barCount = 72;
       const barBaseR = baseR * 1.07;
+      const spectrumGain = state === "standby" ? 0.35 : 1.0;
       ctx.save();
       ctx.translate(cx, cy);
       ctx.rotate(ringAngleA * 0.35);
@@ -327,13 +368,12 @@ export function JarvisCore() {
         const angle = (i / barCount) * Math.PI * 2;
         let binVal = 0;
         if (spectrum && spectrum.length > 0) {
-          // Mirror lower-mid voice bins gracefully around the full circle
           const halfIdx = i < barCount / 2 ? i : barCount - 1 - i;
           const bin = Math.min(
             spectrum.length - 1,
             Math.floor((halfIdx / (barCount / 2)) * (spectrum.length * 0.55))
           );
-          binVal = spectrum[bin] / 255;
+          binVal = (spectrum[bin] / 255) * spectrumGain;
         } else {
           binVal =
             (Math.sin(angle * 4 + t * 3.2) * 0.5 + 0.5) * smoothedEnergy * 0.45;
@@ -341,11 +381,11 @@ export function JarvisCore() {
 
         const len =
           (i % 6 === 0 ? 10 : 4) +
-          binVal * baseR * (state === "speaking" ? 0.42 : 0.34) +
+          binVal * baseR * (state === "speaking" ? 0.44 : 0.34) +
           smoothedEnergy * 6;
 
         ctx.strokeStyle = `rgba(${binVal > 0.45 ? gStr : sStr}, ${
-          0.22 + binVal * 0.72 + (i % 6 === 0 ? 0.12 : 0)
+          (0.2 + binVal * 0.72 + (i % 6 === 0 ? 0.12 : 0)) * lum
         })`;
         ctx.lineWidth = i % 6 === 0 ? 2 : 1.3;
         ctx.beginPath();
@@ -377,7 +417,7 @@ export function JarvisCore() {
         const n = nodes[i];
         let audioBoost = 0;
         if (spectrum && spectrum.length > 0) {
-          audioBoost = (spectrum[i % 48] / 255) * 0.24;
+          audioBoost = (spectrum[i % 48] / 255) * 0.24 * spectrumGain;
         }
         const wave =
           1 +
@@ -388,7 +428,6 @@ export function JarvisCore() {
         const ny = n.y * wave;
         const nz = n.z * wave;
 
-        // Rotate around Y then X
         const x1 = nx * cosY - nz * sinY;
         const z1 = nx * sinY + nz * cosY;
         const y2 = ny * cosX - z1 * sinX;
@@ -404,7 +443,7 @@ export function JarvisCore() {
         });
       }
 
-      // Draw subtle neural lattice filaments between nearby front-hemisphere nodes
+      // Neural lattice filaments between nearby front-hemisphere nodes
       const maxLinkDist = sphereR * 0.42;
       const maxLinkSq = maxLinkDist * maxLinkDist;
       ctx.lineWidth = 0.75;
@@ -421,7 +460,8 @@ export function JarvisCore() {
             const alpha =
               (1 - Math.sqrt(distSq) / maxLinkDist) *
               (0.14 + smoothedEnergy * 0.24) *
-              ((a.z + b.z + 2) * 0.25);
+              ((a.z + b.z + 2) * 0.25) *
+              lum;
             ctx.strokeStyle = `rgba(${pStr}, ${Math.max(0, alpha)})`;
             ctx.beginPath();
             ctx.moveTo(a.x, a.y);
@@ -431,13 +471,16 @@ export function JarvisCore() {
         }
       }
 
-      // Draw glowing neural nodes sorted back-to-front
+      // Glowing neural nodes sorted back-to-front
       projected.sort((a, b) => a.z - b.z);
       for (let i = 0; i < projected.length; i++) {
         const p = projected[i];
         const depthAlpha = Math.max(0.08, Math.min(1, (p.z + 1.2) / 2.2));
-        const dotR = (1.1 + p.scale * 1.15 + p.pulse * 4) * (0.85 + smoothedEnergy * 0.35);
-        ctx.fillStyle = `rgba(${p.z > 0.35 ? gStr : pStr}, ${depthAlpha * (0.55 + smoothedEnergy * 0.4)})`;
+        const dotR =
+          (1.1 + p.scale * 1.15 + p.pulse * 4) * (0.85 + smoothedEnergy * 0.35);
+        ctx.fillStyle = `rgba(${p.z > 0.35 ? gStr : pStr}, ${
+          depthAlpha * (0.52 + smoothedEnergy * 0.42) * lum
+        })`;
         ctx.beginPath();
         ctx.arc(p.x, p.y, dotR, 0, Math.PI * 2);
         ctx.fill();
@@ -446,9 +489,18 @@ export function JarvisCore() {
       // Inner luminous plasma core
       const coreR = baseR * (0.34 + smoothedEnergy * 0.16);
       const coreGrad = ctx.createRadialGradient(cx, cy, 1, cx, cy, coreR);
-      coreGrad.addColorStop(0, `rgba(255, 255, 255, ${0.72 + smoothedEnergy * 0.26})`);
-      coreGrad.addColorStop(0.28, `rgba(${gStr}, ${0.58 + smoothedEnergy * 0.32})`);
-      coreGrad.addColorStop(0.68, `rgba(${pStr}, ${0.18 + smoothedEnergy * 0.22})`);
+      coreGrad.addColorStop(
+        0,
+        `rgba(255, 255, 255, ${Math.min(1, (0.68 + smoothedEnergy * 0.28) * lum)})`
+      );
+      coreGrad.addColorStop(
+        0.28,
+        `rgba(${gStr}, ${Math.min(1, (0.54 + smoothedEnergy * 0.34) * lum)})`
+      );
+      coreGrad.addColorStop(
+        0.68,
+        `rgba(${pStr}, ${(0.16 + smoothedEnergy * 0.22) * lum})`
+      );
       coreGrad.addColorStop(1, "rgba(0, 0, 0, 0)");
 
       ctx.fillStyle = coreGrad;
@@ -472,7 +524,7 @@ export function JarvisCore() {
     <main
       onClick={() => {
         if (!needsPasscode) {
-          void getController().toggle();
+          void getController().handleCoreInteraction();
         }
       }}
       className="fixed inset-0 h-dvh w-screen cursor-pointer overflow-hidden bg-[#02050b] select-none touch-manipulation"
@@ -486,7 +538,7 @@ export function JarvisCore() {
         <ClearanceGate
           onUnlocked={() => {
             setNeedsPasscode(false);
-            void getController().activate();
+            void getController().armStandby();
           }}
         />
       )}

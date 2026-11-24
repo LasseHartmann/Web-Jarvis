@@ -1,5 +1,7 @@
 "use client";
 
+import type { VoiceFilterMode } from "@/types/jarvis";
+
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
   let binary = "";
@@ -16,7 +18,11 @@ function base64ToInt16(base64: string): Int16Array {
   for (let i = 0; i < binary.length; i++) {
     bytes[i] = binary.charCodeAt(i);
   }
-  return new Int16Array(bytes.buffer, bytes.byteOffset, Math.floor(bytes.byteLength / 2));
+  return new Int16Array(
+    bytes.buffer,
+    bytes.byteOffset,
+    Math.floor(bytes.byteLength / 2)
+  );
 }
 
 export class JarvisAudioEngine {
@@ -28,8 +34,13 @@ export class JarvisAudioEngine {
   private workletNode: AudioWorkletNode | null = null;
   private fallbackProcessor: ScriptProcessorNode | null = null;
 
+  // Output graph: source -> voiceInputGain -> (HUD DSP or Natural bypass) -> outputAnalyser -> destination
+  private voiceInputGain: GainNode | null = null;
+  private hudBranchGain: GainNode | null = null;
+  private naturalBranchGain: GainNode | null = null;
   private outputAnalyser: AnalyserNode | null = null;
-  private outputGain: GainNode | null = null;
+  private voiceFilterMode: VoiceFilterMode = "hud";
+
   private activeSources = new Set<AudioBufferSourceNode>();
   private nextPlayTime = 0;
   private speaking = false;
@@ -37,16 +48,36 @@ export class JarvisAudioEngine {
   private inputFreqData = new Uint8Array(128);
   private outputFreqData = new Uint8Array(128);
 
-  private onPcmChunk: ((base64Pcm16k: string) => void) | null = null;
+  private onPcmBase64: ((base64Pcm16k: string) => void) | null = null;
+  private onPcmInt16: ((pcm16k: Int16Array) => void) | null = null;
   private onSpeakingChange: ((speaking: boolean) => void) | null = null;
   private activeDeviceId: string | null = null;
 
   public setCallbacks(callbacks: {
-    onPcmChunk: (base64Pcm16k: string) => void;
+    onPcmBase64: (base64Pcm16k: string) => void;
+    onPcmInt16: (pcm16k: Int16Array) => void;
     onSpeakingChange: (speaking: boolean) => void;
   }) {
-    this.onPcmChunk = callbacks.onPcmChunk;
+    this.onPcmBase64 = callbacks.onPcmBase64;
+    this.onPcmInt16 = callbacks.onPcmInt16;
     this.onSpeakingChange = callbacks.onSpeakingChange;
+  }
+
+  public setVoiceFilterMode(mode: VoiceFilterMode): void {
+    this.voiceFilterMode = mode;
+    const ctx = this.outputCtx;
+    if (!ctx || !this.hudBranchGain || !this.naturalBranchGain) return;
+    const now = ctx.currentTime;
+    this.hudBranchGain.gain.setTargetAtTime(mode === "hud" ? 1 : 0, now, 0.03);
+    this.naturalBranchGain.gain.setTargetAtTime(
+      mode === "natural" ? 1 : 0,
+      now,
+      0.03
+    );
+  }
+
+  public getVoiceFilterMode(): VoiceFilterMode {
+    return this.voiceFilterMode;
   }
 
   /**
@@ -60,15 +91,92 @@ export class JarvisAudioEngine {
     if (!AudioCtx) return;
 
     if (!this.outputCtx || this.outputCtx.state === "closed") {
-      this.outputCtx = new AudioCtx({ sampleRate: 24000 });
-      this.outputAnalyser = this.outputCtx.createAnalyser();
-      this.outputAnalyser.fftSize = 256;
-      this.outputAnalyser.smoothingTimeConstant = 0.72;
-      this.outputGain = this.outputCtx.createGain();
-      this.outputGain.gain.value = 1.0;
-      this.outputGain.connect(this.outputAnalyser);
-      this.outputAnalyser.connect(this.outputCtx.destination);
-      this.outputFreqData = new Uint8Array(this.outputAnalyser.frequencyBinCount);
+      const ctx = new AudioCtx({ sampleRate: 24000 });
+      this.outputCtx = ctx;
+
+      const voiceInput = ctx.createGain();
+      voiceInput.gain.value = 1.0;
+      this.voiceInputGain = voiceInput;
+
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.72;
+      analyser.connect(ctx.destination);
+      this.outputAnalyser = analyser;
+      this.outputFreqData = new Uint8Array(analyser.frequencyBinCount);
+
+      // Branch 1: Subtle "Stark HUD" Voice DSP Chain
+      // Clean high-pass -> warm baritone shelf -> crisp British consonant presence
+      // -> smooth broadcast compressor -> faint 8.5ms holographic workshop sheen
+      const highPass = ctx.createBiquadFilter();
+      highPass.type = "highpass";
+      highPass.frequency.value = 92;
+      highPass.Q.value = 0.7;
+
+      const warmBaritone = ctx.createBiquadFilter();
+      warmBaritone.type = "peaking";
+      warmBaritone.frequency.value = 220;
+      warmBaritone.Q.value = 1.0;
+      warmBaritone.gain.value = 1.2;
+
+      const presence = ctx.createBiquadFilter();
+      presence.type = "peaking";
+      presence.frequency.value = 2900;
+      presence.Q.value = 1.1;
+      presence.gain.value = 2.4;
+
+      const airShelf = ctx.createBiquadFilter();
+      airShelf.type = "highshelf";
+      airShelf.frequency.value = 7200;
+      airShelf.gain.value = 1.4;
+
+      const compressor = ctx.createDynamicsCompressor();
+      compressor.threshold.value = -18;
+      compressor.knee.value = 14;
+      compressor.ratio.value = 3;
+      compressor.attack.value = 0.008;
+      compressor.release.value = 0.16;
+
+      const dryGain = ctx.createGain();
+      dryGain.gain.value = 0.96;
+
+      const microDelay = ctx.createDelay(0.05);
+      microDelay.delayTime.value = 0.0085;
+
+      const sheenFilter = ctx.createBiquadFilter();
+      sheenFilter.type = "bandpass";
+      sheenFilter.frequency.value = 1850;
+      sheenFilter.Q.value = 1.35;
+
+      const wetGain = ctx.createGain();
+      wetGain.gain.value = 0.075;
+
+      const hudBranch = ctx.createGain();
+      hudBranch.gain.value = this.voiceFilterMode === "hud" ? 1 : 0;
+      this.hudBranchGain = hudBranch;
+
+      voiceInput.connect(highPass);
+      highPass.connect(warmBaritone);
+      warmBaritone.connect(presence);
+      presence.connect(airShelf);
+      airShelf.connect(compressor);
+
+      compressor.connect(dryGain);
+      dryGain.connect(hudBranch);
+
+      compressor.connect(microDelay);
+      microDelay.connect(sheenFilter);
+      sheenFilter.connect(wetGain);
+      wetGain.connect(hudBranch);
+
+      hudBranch.connect(analyser);
+
+      // Branch 2: Unprocessed Natural Bypass
+      const naturalBranch = ctx.createGain();
+      naturalBranch.gain.value = this.voiceFilterMode === "natural" ? 1 : 0;
+      this.naturalBranchGain = naturalBranch;
+      voiceInput.connect(naturalBranch);
+      naturalBranch.connect(analyser);
     }
 
     if (this.outputCtx.state === "suspended") {
@@ -120,7 +228,15 @@ export class JarvisAudioEngine {
     this.inputSource = source;
     this.inputAnalyser = analyser;
 
-    // Prefer AudioWorklet for zero-jank 16kHz downsampling off the main thread
+    const dispatchChunk = (buffer: ArrayBuffer) => {
+      if (this.onPcmInt16) {
+        this.onPcmInt16(new Int16Array(buffer));
+      }
+      if (this.onPcmBase64) {
+        this.onPcmBase64(arrayBufferToBase64(buffer));
+      }
+    };
+
     if (this.inputCtx.audioWorklet) {
       try {
         await this.inputCtx.audioWorklet.addModule("/audio-worklet-processor.js");
@@ -129,12 +245,9 @@ export class JarvisAudioEngine {
           "jarvis-pcm-capture"
         );
         worklet.port.onmessage = (event: MessageEvent<ArrayBuffer>) => {
-          if (event.data && this.onPcmChunk) {
-            this.onPcmChunk(arrayBufferToBase64(event.data));
-          }
+          if (event.data) dispatchChunk(event.data);
         };
         analyser.connect(worklet);
-        // Connect through silent gain so Chromium keeps processing graph active
         const silent = this.inputCtx.createGain();
         silent.gain.value = 0;
         worklet.connect(silent);
@@ -159,9 +272,7 @@ export class JarvisAudioEngine {
         const s = Math.max(-1, Math.min(1, channel[idx]));
         pcm[i] = s < 0 ? Math.round(s * 0x8000) : Math.round(s * 0x7fff);
       }
-      if (this.onPcmChunk) {
-        this.onPcmChunk(arrayBufferToBase64(pcm.buffer));
-      }
+      dispatchChunk(pcm.buffer);
     };
 
     const silent = this.inputCtx.createGain();
@@ -186,12 +297,12 @@ export class JarvisAudioEngine {
   }
 
   public enqueuePcm24k(base64Pcm: string): void {
-    if (!this.outputCtx || !this.outputGain) {
+    if (!this.outputCtx || !this.voiceInputGain) {
       this.unlockContexts();
     }
     const ctx = this.outputCtx;
-    const gain = this.outputGain;
-    if (!ctx || !gain) return;
+    const inputNode = this.voiceInputGain;
+    if (!ctx || !inputNode) return;
 
     if (ctx.state === "suspended") {
       ctx.resume().catch(() => {});
@@ -208,7 +319,7 @@ export class JarvisAudioEngine {
 
     const src = ctx.createBufferSource();
     src.buffer = buffer;
-    src.connect(gain);
+    src.connect(inputNode);
 
     const now = ctx.currentTime;
     const startAt = Math.max(now + 0.015, this.nextPlayTime);
@@ -291,7 +402,7 @@ export class JarvisAudioEngine {
     return this.outputFreqData;
   }
 
-  public playTone(kind: "wake" | "sleep" | "tool" | "error"): void {
+  public playTone(kind: "arm" | "wake" | "sleep" | "tool" | "error"): void {
     this.unlockContexts();
     const ctx = this.outputCtx;
     if (!ctx) return;
@@ -309,7 +420,7 @@ export class JarvisAudioEngine {
       osc.type = type;
       osc.frequency.setValueAtTime(freq, now + delay);
       gain.gain.setValueAtTime(0.0001, now + delay);
-      gain.gain.exponentialRampToValueAtTime(peak, now + delay + 0.03);
+      gain.gain.exponentialRampToValueAtTime(peak, now + delay + 0.025);
       gain.gain.exponentialRampToValueAtTime(0.0001, now + delay + dur);
       osc.connect(gain);
       gain.connect(ctx.destination);
@@ -317,18 +428,23 @@ export class JarvisAudioEngine {
       osc.stop(now + delay + dur + 0.03);
     };
 
-    if (kind === "wake") {
-      note(220, 0, 0.35, 0.07, "sine");
-      note(329.63, 0.08, 0.38, 0.06, "sine");
-      note(440, 0.16, 0.45, 0.06, "sine");
-      note(659.25, 0.24, 0.5, 0.045, "triangle");
+    if (kind === "arm") {
+      // Subtle low lock-in chime signaling local "Hey Jarvis" standby is armed
+      note(293.66, 0, 0.24, 0.045, "sine");
+      note(440, 0.09, 0.3, 0.04, "sine");
+    } else if (kind === "wake") {
+      // Crisp Stark Arc-Reactor wake chord
+      note(329.63, 0, 0.26, 0.065, "sine");
+      note(493.88, 0.06, 0.3, 0.06, "sine");
+      note(659.25, 0.12, 0.38, 0.055, "triangle");
+      note(987.77, 0.18, 0.42, 0.035, "sine");
     } else if (kind === "sleep") {
-      note(440, 0, 0.22, 0.055, "sine");
-      note(329.63, 0.12, 0.26, 0.05, "sine");
-      note(220, 0.24, 0.4, 0.05, "sine");
+      note(523.25, 0, 0.2, 0.05, "sine");
+      note(392.0, 0.1, 0.24, 0.045, "sine");
+      note(261.63, 0.2, 0.34, 0.04, "sine");
     } else if (kind === "tool") {
-      note(680, 0, 0.09, 0.035, "sine");
-      note(1020, 0.06, 0.14, 0.035, "sine");
+      note(680, 0, 0.08, 0.035, "sine");
+      note(1020, 0.055, 0.13, 0.035, "sine");
     } else {
       note(210, 0, 0.22, 0.06, "triangle");
       note(165, 0.18, 0.28, 0.06, "triangle");
@@ -340,12 +456,15 @@ export class JarvisAudioEngine {
     try {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 1.02;
-      utterance.pitch = 0.94;
+      utterance.rate = 1.0;
+      utterance.pitch = 0.92;
       const voices = window.speechSynthesis.getVoices();
       const preferred =
-        voices.find((v) => /Google UK English Male|Daniel|George|en-GB/i.test(v.name || v.lang)) ||
-        voices.find((v) => v.lang.startsWith("en"));
+        voices.find((v) =>
+          /Google UK English Male|Microsoft George|Daniel|Arthur|en-GB/i.test(
+            v.name || v.lang
+          )
+        ) || voices.find((v) => v.lang.startsWith("en"));
       if (preferred) utterance.voice = preferred;
       window.speechSynthesis.speak(utterance);
     } catch {

@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "postinstall": "node scripts/copy-ort-wasm.mjs",
+    "prebuild": "node scripts/copy-ort-wasm.mjs",
+    "dev": "node scripts/copy-ort-wasm.mjs && next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"
@@ -11,6 +13,7 @@
   "dependencies": {
     "@google/genai": "^3.6.1",
     "next": "16.4.6",
+    "onnxruntime-web": "^1.31.1",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },

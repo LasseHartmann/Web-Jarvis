@@ -189,7 +189,7 @@ export class JarvisSensorHub {
     return Promise.all(tasks).then(() => {});
   }
 
-  public async startAllSensors(): Promise<void> {
+  public async startPassiveSensorsAndPreauthCamera(): Promise<void> {
     this.startGyroAndMotion();
     this.startGps();
     this.startBattery();
@@ -197,9 +197,24 @@ export class JarvisSensorHub {
     this.startAmbientLight();
     void this.refreshStorageEstimate();
 
-    // Start primary camera if permitted (fail-safe if no camera or user denies)
-    await this.startCamera().catch(() => {});
-    await this.refreshMediaDevices();
+    // Pre-authorize camera permission once during the initial user gesture,
+    // enumerate real device labels, then immediately release the camera track
+    // so the camera stays OFF during "Hey Jarvis" wake-word standby.
+    if (navigator.mediaDevices?.getUserMedia) {
+      try {
+        const probeStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: "user" } },
+          audio: false,
+        });
+        await this.refreshMediaDevices();
+        probeStream.getTracks().forEach((t) => t.stop());
+      } catch {
+        // User denied camera or device has no camera — continue gracefully
+        await this.refreshMediaDevices();
+      }
+    } else {
+      await this.refreshMediaDevices();
+    }
 
     if (navigator.mediaDevices && !this.boundDeviceChangeHandler) {
       this.boundDeviceChangeHandler = () => {
@@ -210,8 +225,25 @@ export class JarvisSensorHub {
         this.boundDeviceChangeHandler
       );
     }
+  }
 
+  public async startVisionStream(): Promise<void> {
+    await this.startCamera().catch(() => {});
     this.startFrameLoop();
+  }
+
+  public stopVisionStream(): void {
+    if (this.frameInterval) {
+      clearInterval(this.frameInterval);
+      this.frameInterval = null;
+    }
+    this.stopCameraOnly();
+    this.stopScreenShare();
+    this.cameraPaused = true;
+    if (this.videoEl) {
+      this.videoEl.srcObject = null;
+    }
+    void this.refreshMediaDevices();
   }
 
   public async refreshMediaDevices(): Promise<{

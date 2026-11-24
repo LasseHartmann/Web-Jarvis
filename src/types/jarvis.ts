@@ -1,7 +1,13 @@
 export type CorePalette = "cyan" | "amber" | "emerald" | "crimson" | "violet";
 
+export type VoiceFilterMode = "hud" | "natural";
+
+export type WakeSensitivity = "low" | "medium" | "high";
+
 export type JarvisCoreState =
   | "idle"
+  | "arming"
+  | "standby"
   | "connecting"
   | "listening"
   | "speaking"
